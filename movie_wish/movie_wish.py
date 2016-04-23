@@ -221,6 +221,7 @@ def get_index_from_csv(filename = RESULT_CSV_FILE):
 # 所有解析成功的电影索引号集合（无重复）
 # index_set = get_from_pickle(INDEX_PICKLE_FILE)
 index_set = get_index_from_csv()
+print('结果中已有' + str(len(index_set)) + '部电影')
 
 # 用于保存所有新解析结果的列表
 movie_list = []
