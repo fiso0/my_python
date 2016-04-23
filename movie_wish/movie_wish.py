@@ -6,11 +6,12 @@ from bs4 import BeautifulSoup
 import requests
 import re
 import pickle
+import csv
 import logging
 
 BT_URL = 'http://www.bttiantang.com'
 INDEX_PICKLE_FILE = 'Movie_wish.pickle'
-
+RESULT_CSV_FILE = 'Movie_wish.csv'
 
 def get_soup_of(url):
 	"""获取某个url的soup
@@ -149,6 +150,22 @@ def save_in_txt(filename, results):
 		print('没有结果需要保存')
 
 
+def save_result_in_csv(result, filename = RESULT_CSV_FILE):
+	result_list = [result['index'], result['title'][0], result['douban_url'], result['bt_url']]
+	for down_info in result['download']:
+		result_list.append(str(down_info['size']))
+		result_list.append(down_info['download_addr'])
+
+	try:
+		f = open(filename, 'x', newline='')
+	except FileExistsError:
+		f = open(filename, 'a', newline='')
+	finally:
+		spam_writer = csv.writer(f)
+		spam_writer.writerow(result_list)
+		f.close()
+		print('结果已保存到：' + filename)
+
 def save_in_pickle(filename, results):
 	if len(results) > 0:
 		try:
@@ -185,41 +202,59 @@ def get_from_pickle(filename):
 		print('读取失败,新建索引集合')
 	return index
 
+
+def get_index_from_csv(filename = RESULT_CSV_FILE):
+	print('读取已解析电影索引号')
+	index = set([])
+	try:
+		with open(filename, newline='') as f:
+			spam_reader = csv.reader(f)
+			for row in spam_reader:
+				index.add(row[0])
+	except FileNotFoundError:
+		print('读取失败,新建索引集合')
+	return index
+
+
 # 主程序
+
+# 所有解析成功的电影索引号集合（无重复）
+# index_set = get_from_pickle(INDEX_PICKLE_FILE)
+index_set = get_index_from_csv()
+
+# 用于保存所有新解析结果的列表
+movie_list = []
+
+# 豆瓣电影 我的想看 页面
+douban_url = 'https://movie.douban.com/people/35209764/wish'
+soup = get_soup_of(douban_url)
+
+# 总的想看电影数量
+douban_wish_cnt = int(re.findall(r'\d+', soup.select_one('#db-usr-profile .info h1').text)[0])
+
+# 获取想新解析多少部电影
+user_input = input('请输入想新解析多少部电影(0表示全部)：')
 try:
-	print('请输入想解析多少部电影(0表示全部)：')
-	user_input = input()
+	wish_count = int(user_input)
+except ValueError:
+	wish_count = 0
 
-	# 用于保存所有结果的列表
-	movie_list = []
+if wish_count == 0 or wish_count > douban_wish_cnt:
+	wish_count = douban_wish_cnt
 
-	# 所有解析过的电影索引号集合（无重复）
-	index_set = get_from_pickle(INDEX_PICKLE_FILE)
+# 从第一页开始 对每一页解析
+for start in range(0, wish_count, 15):
+	douban_page_url = douban_url + '?start=' + str(start)
+	soup = get_soup_of(douban_page_url)
 
-	# 豆瓣电影 我的想看 页面
-	douban_url = 'https://movie.douban.com/people/35209764/wish'
-	soup = get_soup_of(douban_url)
+	# 该页内所有的电影条目（默认最大15条）
+	items_in_one_page = soup.select('.item')
 
-	# 总的想看电影数量
-	wish_total = int(re.findall(r'\d+', soup.select_one('#db-usr-profile .info h1').text)[0])
-
-	if user_input:
-		wish_count = int(user_input)
-
-	# 对每一页解析
-	for start in range(0, wish_total, 15):
-		douban_page_url = douban_url + '?start=' + str(start)
-		soup = get_soup_of(douban_page_url)
-
-		# 该页内所有的电影条目（默认最大15条）
-		list_items = soup.select('.item')
-
-		# 对一部电影解析
-		for item in list_items:
-			if len(movie_list) >= wish_count:
-				finish_parse(movie_list, index_set) # todo: yes?
-
-			# 保存一部电影的全部信息：包括电影标题，豆瓣链接，下载资源（字典）
+	parse_continue = True
+	# 对一部电影解析
+	for item in items_in_one_page:
+		if parse_continue:
+			# 保存一部电影的全部信息：包括豆瓣链接，豆瓣电影索引号，电影标题，下载资源（字典）
 			movie = {}
 
 			# 电影标题
@@ -233,8 +268,9 @@ try:
 			print('豆瓣链接：' + movie_douban_url)
 
 			# 豆瓣电影索引号
-			movie_index = get_movie_index(movie_douban_url)
-			if movie_index in index_set:
+			movie_douban_index = get_movie_index(movie_douban_url)
+			movie['index'] = movie_douban_index
+			if movie_douban_index in index_set:
 				print('已解析过此电影，下一部')
 				continue
 
@@ -261,12 +297,20 @@ try:
 
 			# 电影下载资源
 			movie['download'] = movie_downloads
+			# 搜索到了可下载资源
 			if len(movie_downloads):
-				index_set.add(movie_index)
+				index_set.add(movie_douban_index)
 
 				# 将此部电影所有相关信息添加到电影结果列表中
 				movie_list.append(movie)
-except Exception as e:
-	logging.exception(e)
-finally:
-	finish_parse(movie_list, index_set)
+
+				# 保存该电影结果到输出文件
+				save_result_in_csv(movie)
+
+			if len(movie_list) >= wish_count:
+				parse_continue = False
+
+		else:
+			break
+
+print('已解析完毕')
