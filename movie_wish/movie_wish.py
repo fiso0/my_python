@@ -12,6 +12,7 @@ import logging
 BT_URL = 'http://www.bttiantang.com'
 INDEX_PICKLE_FILE = 'Movie_wish.pickle'
 RESULT_CSV_FILE = 'Movie_wish.csv'
+WAIT_FILE = 'Movie_wait.csv'
 
 def get_soup_of(url):
 	"""获取某个url的soup
@@ -151,7 +152,10 @@ def save_in_txt(filename, results):
 
 
 def save_result_in_csv(result, filename = RESULT_CSV_FILE):
-	result_list = [result['index'], result['title'][0], result['douban_url'], result['bt_url']]
+	try:
+		result_list = [result['index'], result['title'][0], result['douban_url'], result['bt_url']]
+	except:
+		result_list = [result['index'], result['title'][0], result['douban_url']]
 	for down_info in result['download']:
 		result_list.append(str(down_info['size']))
 		result_list.append(down_info['download_addr'])
@@ -223,8 +227,14 @@ def get_index_from_csv(filename = RESULT_CSV_FILE):
 index_set = get_index_from_csv()
 print('结果中已有' + str(len(index_set)) + '部电影')
 
+# 所有失败过的结果索引号集合（无重复）
+fail_index = get_index_from_csv(WAIT_FILE)
+
 # 用于保存所有新解析结果的列表
 movie_list = []
+
+# 用于保存所有解析失败的结果列表
+fail_list = []
 
 # 豆瓣电影 我的想看 页面
 douban_url = 'https://movie.douban.com/people/35209764/wish'
@@ -245,6 +255,7 @@ if wish_count == 0 or wish_count > douban_wish_cnt:
 
 # 从第一页开始 对每一页解析
 for start in range(0, wish_count, 15):
+	print('开始解析第',str(int(start/15)+1),'页...')
 	douban_page_url = douban_url + '?start=' + str(start)
 	soup = get_soup_of(douban_page_url)
 
@@ -255,63 +266,73 @@ for start in range(0, wish_count, 15):
 	# 对一部电影解析
 	for item in items_in_one_page:
 		if parse_continue:
-			# 保存一部电影的全部信息：包括豆瓣链接，豆瓣电影索引号，电影标题，下载资源（字典）
-			movie = {}
+			try:
+				# 保存一部电影的全部信息：包括豆瓣链接，豆瓣电影索引号，电影标题，下载资源（字典）
+				movie = {}
 
-			# 电影标题
-			movie_titles = item.select_one('.title').text.replace(' ', '').replace('\n', '').split('/')
-			movie['title'] = movie_titles
-			print('电影：' + movie_titles[0])
+				# 电影标题
+				movie_titles = item.select_one('.title').text.replace(' ', '').replace('\n', '').split('/')
+				movie['title'] = movie_titles
+				print('电影：' + movie_titles[0])
 
-			# 豆瓣电影页网址
-			movie_douban_url = item.select_one('.title a').get('href')
-			movie['douban_url'] = movie_douban_url
-			print('豆瓣链接：' + movie_douban_url)
+				# 豆瓣电影页网址
+				movie_douban_url = item.select_one('.title a').get('href')
+				movie['douban_url'] = movie_douban_url
+				print('豆瓣链接：' + movie_douban_url)
 
-			# 豆瓣电影索引号
-			movie_douban_index = get_movie_index(movie_douban_url)
-			movie['index'] = movie_douban_index
-			if movie_douban_index in index_set:
-				print('已解析过此电影，下一部')
-				continue
+				# 豆瓣电影索引号
+				movie_douban_index = get_movie_index(movie_douban_url)
+				movie['index'] = movie_douban_index
+				if movie_douban_index in index_set:
+					print('已解析过此电影，下一部')
+					continue
 
-			# 尝试到BT天堂上搜索该电影，获取搜索结果的BT页面地址和对应的豆瓣页面地址
-			search_results = search_bt_movie(movie_titles[0])
+				# 尝试到BT天堂上搜索该电影，获取搜索结果的BT页面地址和对应的豆瓣页面地址
+				search_results = search_bt_movie(movie_titles[0])
 
-			# 根据豆瓣页面是否相同确认为正确的搜索结果
-			for (bt, douban) in search_results:
-				if douban.split(':')[1] == movie_douban_url.split(':')[1]:
-					print('搜索到该电影，开始搜索下载资源')
+				# 根据豆瓣页面是否相同确认为正确的搜索结果
+				for (bt, douban) in search_results:
+					if douban.split(':')[1] == movie_douban_url.split(':')[1]:
+						print('搜索到该电影，开始搜索下载资源')
 
-					# 电影的bt页面地址
-					movie['bt_url'] = bt
+						# 电影的bt页面地址
+						movie['bt_url'] = bt
 
-					# 获取高清资源大小和下载地址（字典列表）
-					movie_downloads = get_downloads(bt)
-					break
-				# else:
-				# 	print(douban)
-				# 	print(movie_douban_url)
-			else:
-				print('没有搜索到该电影')
-				movie_downloads = []
+						# 获取高清资源大小和下载地址（字典列表）
+						movie_downloads = get_downloads(bt)
+						break
+					# else:
+					# 	print(douban)
+					# 	print(movie_douban_url)
+				else:
+					print('没有搜索到该电影')
+					movie_downloads = []
 
-			# 电影下载资源
-			movie['download'] = movie_downloads
-			# 搜索到了可下载资源
-			if len(movie_downloads):
-				index_set.add(movie_douban_index)
+				# 电影下载资源
+				movie['download'] = movie_downloads
+				# 搜索到了可下载资源
+				if len(movie_downloads):
+					index_set.add(movie_douban_index)
 
-				# 将此部电影所有相关信息添加到电影结果列表中
-				movie_list.append(movie)
+					# 将此部电影所有相关信息添加到电影结果列表中
+					movie_list.append(movie)
 
-				# 保存该电影结果到输出文件
-				save_result_in_csv(movie)
+					# 保存该电影结果到输出文件
+					save_result_in_csv(movie)
+				# 没搜索到该电影或可下载资源
+				else:
+					# 将此部电影所有相关信息添加到失败结果列表中
+					fail_list.append(movie)
 
-			if len(movie_list) >= wish_count:
-				parse_continue = False
+					if(movie['index'] not in fail_index):
+						# 保存该电影结果到输出文件
+						save_result_in_csv(movie,WAIT_FILE)
 
+				if len(movie_list) >= wish_count:
+					parse_continue = False
+			except Exception as e:
+				print('some error:', str(e))
 		else:
 			break
 
-print('已解析完毕')
+input('已解析完毕，请按任意键结束')
