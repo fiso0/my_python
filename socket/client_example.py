@@ -22,7 +22,7 @@ while True:
 			# 关闭连接
 			s.close()
 	except:
-		pass
+		break
 
 data=b''.join(buffer)
 
