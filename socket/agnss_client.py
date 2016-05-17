@@ -17,7 +17,10 @@ GET_DATA = b'GET /v1/device/agnss?client_id=cmcc-mxt535&device_id=35667406051151
 
 
 def one_try(try_cnt):
-	print('start one try')
+	print('start one try...')
+
+	# 设置超时时间
+	socket.setdefaulttimeout(10)
 
 	# 创建一个socket 使用IPv4 TCP
 	s=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -78,9 +81,14 @@ fail_cnt = 0
 
 while(True):
 	try_cnt += 1
-	if(one_try(try_cnt)):
-		success_cnt += 1
-	else:
-		fail_cnt += 1
-	print('>>> Total: ',str(try_cnt),', Success: ',str(success_cnt),', Fail: ',str(fail_cnt))
-	time.sleep(5)
+	try:
+		if(one_try(try_cnt)):
+			success_cnt += 1
+		else:
+			fail_cnt += 1
+		print('>>> Total: ',str(try_cnt),', Success: ',str(success_cnt),', Fail: ',str(fail_cnt))
+	except exception as e:
+		print(e)
+	finally:
+		print('sleep 2s...')
+		time.sleep(2)
