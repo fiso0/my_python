@@ -3,7 +3,7 @@ from datetime import datetime
 
 print('开始检查等待列表中的电影......')
 
-SIZE_MIN = 3  # 至少3GB
+SIZE_MIN = 3.1  # 至少3.1GB
 
 WAIT_FILE = 'WaitingRoom.txt'
 
